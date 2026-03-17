@@ -21,11 +21,17 @@ Standard inertia estimation typically requires controlled disturbance experiment
 
 The approach is based on the **stochastic swing equation**:
 
-```
-M · df/dt + D · (f − f₀) = ξ(t)
-```
+$$
+M \frac{df}{dt} + D (f - f_0) = \xi(t)
+$$
 
-where `ξ(t)` is an unobserved stochastic power imbalance process. Rather than requiring `ξ(t)` directly, the model identifies `M` and `D` as the parameter pair for which the residual `R = M·df/dt + D·(f−f₀)` exhibits the statistical properties of white noise — i.e. zero autocorrelation at all lags.
+where \( \xi(t) \) is an unobserved stochastic power imbalance process. Rather than requiring \( \xi(t) \) directly, the model identifies \( M \) and \( D \) as the parameter pair for which the residual
+
+$$
+R = M \frac{df}{dt} + D (f - f_0)
+$$
+
+exhibits the statistical properties of white noise — i.e. zero autocorrelation at all lags.
 
 ---
 
@@ -34,7 +40,7 @@ where `ξ(t)` is an unobserved stochastic power imbalance process. Rather than r
 Two complementary approaches are implemented:
 
 ### 🔍 `InertiaPINN` — per-window analysis (notebook 03)
-Trains a small network on a single frequency window to find the `(M, D)` pair that whitens the residual for that window. Slow (requires training per estimate) but useful for detailed analysis of specific time periods.
+Trains a small network on a single frequency window to find the \( (M, D) \) pair that whitens the residual for that window. Slow (requires training per estimate) but useful for detailed analysis of specific time periods.
 
 ### 🚀 `InertiaNet` — generalisable real-time estimator (notebook 04)
 Trained once on a full year of data. Performs inference on any new frequency window in a single forward pass — sub-millisecond per estimate. This is the intended production-style model.
@@ -69,16 +75,17 @@ These patterns are **physically plausible** but the model has not been validated
 
 **Why not just use the table method?**
 
-The generation-weighted H_sys formula:
-```
-H_sys(t) = Σ [ H_i · P_i(t) ] / P_total(t)
-```
+The generation-weighted \( H_{\text{sys}} \) formula:
+
+$$
+H_{\text{sys}}(t) = \frac{\sum_i H_i \cdot P_i(t)}{P_{\text{total}}(t)}
+$$
 
 ...only counts synchronous generators. It assigns zero to wind, solar, and all load-side rotating machinery. The PINN attempts to recover the full effective inertia from frequency dynamics, without needing generation data at all.
 
-**Why is df/dt hard?**
+**Why is \( df/dt \) hard?**
 
-Finite differences on 1-second PMU data amplify noise by ~50x. The model smooths the frequency trajectory using a Savitzky-Golay filter before computing df/dt — giving a clean derivative without a per-window learned smoother.
+Finite differences on 1-second PMU data amplify noise by ~50x. The model smooths the frequency trajectory using a Savitzky-Golay filter before computing \( \frac{df}{dt} \) — giving a clean derivative without a per-window learned smoother.
 
 ---
 
@@ -94,7 +101,13 @@ raw f(t) — 3600s window
   M (MWs/MVA)    D (MW/Hz)
 ```
 
-**Training signal:** whiteness of `R = M·df/dt + D·(f−f₀)` across a batch of windows. No labels. No ΔP. Frequency data only.
+**Training signal:** whiteness of  
+
+$$
+R = M \frac{df}{dt} + D (f - f_0)
+$$
+
+across a batch of windows. No labels. No ΔP. Frequency data only.
 
 ---
 
