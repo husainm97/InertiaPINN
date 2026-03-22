@@ -31,7 +31,7 @@ $$M \frac{df}{dt} + D(f - f_0) = \xi(t)$$
 
 where $M$ is effective inertia, $D$ is damping, $f_0 = 50$ Hz, and $\xi(t)$ is an unobserved stochastic power imbalance process.
 
-The key insight: if $\xi(t)$ is physically reasonable (uncorrelated in time — load switching events have no memory), then $M$ and $D$ are the unique parameter pair for which the residual
+The key insight: if $\xi(t)$ is physically reasonable — uncorrelated in time, since load switching events have no memory — then $M$ and $D$ are the unique parameter pair for which the residual
 
 $$R(t) = M \frac{df}{dt} + D(f - f_0)$$
 
@@ -45,17 +45,17 @@ has zero autocorrelation at all lags. The model identifies $M$ and $D$ by findin
 
 ### 🔍 `InertiaPINN` — per-window analysis (notebook 03)
 
-Fits a **Fourier series** $\hat{f}(t) = \sum_k [a_k \cos(2\pi k t) + b_k \sin(2\pi k t)]$ to one window of frequency data. The derivative $d\hat{f}/dt$ is computed **analytically** from the Fourier coefficients — no finite differences, no boundary spikes, infinitely differentiable by construction.
+Fits a **Tanh MLP** $\hat{f}(t)$ to one window of frequency data, taking normalised time $t \in [0,1]$ as input. The derivative $d\hat{f}/dt$ is computed via **automatic differentiation** on the smooth learned function — not finite differences on noisy data.
 
-$M$ and $D$ are `nn.Parameter` values trained jointly with the Fourier coefficients via the whiteness loss. Hyperparameters are tuned with Optuna on a per-window basis.
+$M$ and $D$ are `nn.Parameter` values trained jointly with the network weights via the whiteness loss. A curvature penalty on $d^2f/dt^2$ suppresses jittery derivatives. Hyperparameters are tuned with Optuna on a per-window basis, jointly optimising residual whiteness and derivative smoothness.
 
-**Status:** produces physically plausible $M$ estimates in the range 5–7 MWs/MVA. Residuals approach but do not fully achieve whiteness on single windows. Cannot generalise — requires retraining per window.
+**Status:** produces physically plausible $M$ estimates. Residuals approach but do not fully achieve whiteness on single windows. Cannot generalise — requires retraining per window.
 
-**Purpose:** validation tool and slow ground-truth generator. Not the operational product.
+**Purpose:** validation tool and slow reference estimator. Not the operational product.
 
 ### 🚀 `InertiaNet` — real-time generalisable estimator (notebook 04)
 
-Trained once on multiple years of data. A single forward pass on any new frequency window produces $M$ and $D$ in under 1ms. This is the operational model.
+Trained once on multiple years of data. A single forward pass on any new frequency window produces $M$ and $D$ in under 20ms. This is the operational model.
 
 Uses a 1D-CNN to extract temporal features from the standardised frequency window, followed by an MLP with sigmoid-bounded output heads for $M$ and $D$. The Savitzky-Golay filter provides smooth $df/dt$ as a preprocessed input feature.
 
@@ -66,6 +66,8 @@ Uses a 1D-CNN to extract temporal features from the standardised frequency windo
 ## 📊 Results
 
 Trained on 2015–2017 German grid frequency data. Validated on 2018–2019 (unseen years with higher renewable penetration).
+
+![image](images/04_inference.png)
 
 | Metric | Value | Notes |
 |--------|-------|-------|
@@ -107,6 +109,18 @@ has three systematic problems this model addresses:
 
 ## 🏗️ Architecture
 
+### InertiaPINN (per-window)
+```
+normalised time t ∈ [0,1]
+    ↓  Tanh MLP (hidden_dim × n_layers)
+    ↓  scaled f_s(t)  →  autograd df/dt  →  physical df/dt [Hz/s]
+    ↓  R = M·df/dt + D·(f-f0)
+    M, D: nn.Parameter (physical units, Softplus-positive)
+    Loss: whiteness of R + curvature penalty on d²f/dt²
+    Tuned: Optuna over lr, beta, delta, architecture, epochs
+```
+
+### InertiaNet (generalisable)
 ```
 raw f(t) — 3600s window
     ↓  Savitzky-Golay smooth (window=61, poly=3) → df/dt
@@ -115,9 +129,8 @@ raw f(t) — 3600s window
     ↓  MLP: Linear(1024→128) × 4 layers, GELU
     ↓  Output heads with sigmoid bounds
     M ∈ [1, 15] MWs/MVA      D ∈ [0.1, 10] MW/Hz
+    Loss: whiteness of R across batch + weak Gaussian prior on M
 ```
-
-**Training loss:** sum of squared autocorrelations of $R = M \cdot \frac{df}{dt} + D \cdot (f - f_0)$ at lags 1–60s, plus a weak Gaussian prior on $M$ centred at the table estimate. The prior prevents collapse during early training — it decays in influence as the whiteness loss takes over.
 
 ---
 
@@ -135,7 +148,7 @@ grid-inertia-pinn/
 │       └── de_inertia_15min.csv
 │
 ├── models/
-│   ├── pinn.py                            ← InertiaPINN (Fourier) + InertiaNet (CNN)
+│   ├── pinn.py                            ← InertiaPINN + InertiaNet
 │   └── losses.py                          ← PINNLoss + InertiaNetLoss
 │
 ├── notebooks/
@@ -170,10 +183,10 @@ python data/fetch_frequency_1s.py --years 2015 2016 2017 2018 2019
 # 2. Build processed CSVs from OPSD
 python data/build_data.py
 
-# 3. Per-window PINN with Optuna tuning (slow, analytical)
+# 3. Per-window PINN with Optuna tuning
 jupyter notebook notebooks/03_pinn_training.ipynb
 
-# 4. Train InertiaNet + validate on unseen years (fast, generalisable)
+# 4. Train InertiaNet + validate on unseen years
 jupyter notebook notebooks/04_inference.ipynb
 ```
 
@@ -193,7 +206,7 @@ jupyter notebook notebooks/04_inference.ipynb
 ## 🔮 Potential Extensions
 
 - **Event-based validation** — use ENTSO-E transparency event logs or National Grid ESO disturbance records to compute ground-truth M from known ΔP events, then compare against InertiaNet estimates at the same timestamps
-- **Nordic or GB grid** — apply the same methodology to Fingrid (Finland) or National Grid ESO data where inertia variation is more pronounced and event data is publicly available
+- **Nordic or GB grid** — apply the same methodology to Fingrid or National Grid ESO data where inertia variation is more pronounced and event data is publicly available
 - **Multi-year trend analysis** — extend training to 2015–2022 to track the full German energy transition
 - **Synthetic inertia detection** — as battery-based synthetic inertia services are deployed, track whether M_PINN captures their contribution
 - **Live inference pipeline** — connect to ENTSO-E Transparency Platform API for real-time M estimation
