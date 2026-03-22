@@ -69,6 +69,7 @@ class PINNLoss(nn.Module):
         lags:        list  = [1, 2, 5, 10, 20, 30],
         warmup_data: int   = 200,
         warmup_phys: int   = 1500,
+        delta: float = 0.8
     ):
         super().__init__()
         self.alpha       = alpha
@@ -82,6 +83,7 @@ class PINNLoss(nn.Module):
         self.warmup_phys = warmup_phys
         self.beta        = 0.0
         self.gamma       = gamma_max
+        self.delta = delta
 
     def schedule(self, epoch: int):
         if epoch < self.warmup_data:
@@ -101,6 +103,7 @@ class PINNLoss(nn.Module):
         f_s_true: torch.Tensor,   # (N,1) measured f in scaled space
         R:        torch.Tensor,   # (N,1) residual M*df/dt + D*(f-f0)
         M:        torch.Tensor,   # scalar M [physical]
+        S
     ) -> tuple[torch.Tensor, dict]:
 
         l_data = F.mse_loss(f_s_pred, f_s_true)
@@ -113,7 +116,8 @@ class PINNLoss(nn.Module):
 
         l_prior = ((M - self.M_prior) / self.M_std).pow(2)
 
-        total = self.alpha * l_data + self.beta * l_white + self.gamma * l_prior
+        l_smooth = S
+        total = self.alpha * l_data + self.beta * l_white + self.gamma * l_prior + self.delta * l_smooth
 
         return total, {
             'loss_total': total.item(),
@@ -122,6 +126,7 @@ class PINNLoss(nn.Module):
             'loss_prior': l_prior.item(),
             'beta':       self.beta,
             'gamma':      self.gamma,
+            'loss_smooth': l_smooth.item(),
         }
     
 

@@ -209,6 +209,26 @@ class InertiaPINN(nn.Module):
         )[0]
         dfdt_phys = dfdt_norm * self.scalers.sig_f / self.t_scale
         return self._M_t * dfdt_phys + self._D_t * f_dev
+    
+    
+    def smooth_penalty(self, t_norm: torch.Tensor) -> torch.Tensor:
+        """
+        Penalises d²f/dt² in physical units [Hz/s²].
+        t_norm is in [0,1] so chain rule: d²f/dt²_physical = d²f/dt²_norm * (sig_f / t_scale²)
+        """
+        f_s = self._forward_scaled(t_norm)
+        dfdt_norm = torch.autograd.grad(
+            f_s, t_norm,
+            grad_outputs=torch.ones_like(f_s),
+            create_graph=True, retain_graph=True,
+        )[0]
+        d2fdt2_norm = torch.autograd.grad(
+            dfdt_norm, t_norm,
+            grad_outputs=torch.ones_like(dfdt_norm),
+            create_graph=False, retain_graph=True,
+        )[0]
+    
+        return d2fdt2_norm.pow(2).sum()
 
     def count_parameters(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
