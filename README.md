@@ -93,6 +93,17 @@ D is poorly constrained and should not be interpreted quantitatively. The dampin
 
 ---
 
+## 🧪 Validation Summary
+
+| Test | M (MWs/MVA) | Notes |
+|------|-------------|-------|
+| Original inference | 6.17 ± 0.71 | Diurnal pattern, load-side contribution visible |
+| Phase-randomised | 6.13 ± 0.69 | Residual whitening preserved, M robust to phase randomisation |
+| df/dt scaling | 6.17 | Network robust to linear scaling of df/dt |
+| Renewable correlation | r=-0.098 | Negative correlation with increased renewable penetration, consistent with expectations |
+
+---
+
 ## ⚙️ Why Not Just Use the Table?
 
 The generation-weighted formula:
